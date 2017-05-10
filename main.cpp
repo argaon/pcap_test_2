@@ -7,13 +7,14 @@
 #include <netinet/tcp.h>
 #include <pcap.h>
 #include <regex>
+#include <iomanip>
 
 using namespace std;
 
 #define PCAP_OPENFLAG_PROMISCUOUS 1   // Even if it isn't my mac, receive packet
 
 struct ether_header *eh;
-struct ip *iph;
+struct iphdr *iph;
 struct tcphdr *tcph;
 struct pcap_pkthdr *pkt_header;
 char errbuf[PCAP_ERRBUF_SIZE];
@@ -43,6 +44,8 @@ int main(int argc, char **argv)
     }
     const u_char *pkt_data;
     int res;
+    regex re("Host: ([^\r]*)");
+
 
     while(1)
     {
@@ -55,6 +58,7 @@ int main(int argc, char **argv)
             u_char *mac = eh->ether_dhost;
             printf("Ethernet Header\n");
             printf("Dst Mac : ");
+            cout << showbase<<internal<<setfill('0');
             for(ehcnt=0;ehcnt<6;ehcnt++)
                 printf("%02x ",(*mac++));
             mac = eh->ether_shost;
@@ -71,17 +75,17 @@ int main(int argc, char **argv)
             uint16_t etype = ntohs(eh->ether_type);
             if(etype == ETHERTYPE_IP)
             {
-                iph = (struct ip *)pkt_data;
+                iph = (struct iphdr *)pkt_data;
                 char cip[INET_ADDRSTRLEN];
                 printf("IP Header\n");
-                inet_ntop(AF_INET,&iph->ip_src,cip,sizeof(cip));
+                inet_ntop(AF_INET,&iph->saddr,cip,sizeof(cip));
                 printf("Src Address : %s\n", cip);
-                inet_ntop(AF_INET,&iph->ip_dst,cip,sizeof(cip));
+                inet_ntop(AF_INET,&iph->daddr,cip,sizeof(cip));
                 printf("Dst Address : %s\n", cip);
-                pkt_data += iph->ip_hl*4;
-                length -= iph->ip_hl*4;
+                pkt_data += iph->ihl*4;
+                length -= iph->ihl*4;
 
-                if(iph->ip_p == IPPROTO_TCP)
+                if(iph->protocol == IPPROTO_TCP)
                 {
                     tcph = (struct tcphdr*)pkt_data;
                     int jtotd = (tcph->doff *4);
@@ -89,17 +93,23 @@ int main(int argc, char **argv)
                     length -= jtotd;      //pkt length - jump length
                     if(length > 0)
                     {
-                        printf("Have TCP DATA !\n");
-                        string output( reinterpret_cast<char const*>(pkt_data), length) ;
-                        regex re("Host: ([^\n]*)");
+                        cout<<"Have TCP DATA !"<<endl;
+                        string output(reinterpret_cast<char const*>(pkt_data), length);
                         smatch m;
-                        regex_search(output,m,re);
-                        cout<<m[1]<<endl;
+                        bool match = regex_search(output,m,re);
+                        if((match))
+                            cout<<m[0]<<endl;
+                        else
+                            cout<<"Not http request!"<<endl;
                     }
                     else
-                        printf("No have TCP DATA !\n");
+                        cout<<"No have TCP DATA !"<<endl;
                 }
+                else
+                    cout<<"No have TCP packet"<<endl;
             }
+            else
+                cout<<"No have IP packet"<<endl;
         }
     }
     return 0;
